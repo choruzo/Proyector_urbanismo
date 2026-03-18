@@ -1,4 +1,5 @@
 from pydantic_settings import BaseSettings, SettingsConfigDict
+from pydantic import field_validator
 from functools import lru_cache
 
 
@@ -49,11 +50,23 @@ class Settings(BaseSettings):
     def CELERY_RESULT_BACKEND(self) -> str:
         return self.REDIS_URL
 
-    # CORS (para dev local)
+    # CORS — acepta tanto JSON como lista separada por comas
     ALLOWED_ORIGINS: list[str] = [
         "http://localhost:5173",
         "http://localhost:3000",
     ]
+
+    @field_validator("ALLOWED_ORIGINS", mode="before")
+    @classmethod
+    def parse_allowed_origins(cls, v):
+        if isinstance(v, str):
+            # Soporta tanto JSON como valores separados por coma
+            v = v.strip()
+            if v.startswith("["):
+                import json
+                return json.loads(v)
+            return [origin.strip() for origin in v.split(",") if origin.strip()]
+        return v
 
     # Ciudad objetivo
     MUNICIPIO_NOMBRE: str = "Getafe"

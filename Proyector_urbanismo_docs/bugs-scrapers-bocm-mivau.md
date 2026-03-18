@@ -145,6 +145,13 @@ for _, row in df_raw.iterrows():
 
 ---
 
+## Referencias
+
+- [[Bienvenido]] — Índice del proyecto
+- [[v0.2 — Ingesta histórica y Tendencias]] — Roadmap activo (estas correcciones desbloquean las tareas 2.x)
+
+---
+
 ## Resumen de estado final
 
 | Scraper | Error original | Estado | Resultado |

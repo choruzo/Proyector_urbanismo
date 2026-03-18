@@ -19,6 +19,7 @@ updated: 2026-03-18
 |---|---|
 | [[v0.2 — Ingesta histórica y Tendencias]] | Roadmap activo — ingesta de datos históricos y página de Tendencias |
 | [[bugs-scrapers-bocm-mivau]] | Bugs resueltos en scrapers BOCM y MIVAU (2026-03-18) |
+| [[Fuentes de datos]] | Catálogo de fuentes externas — APIs, scrapers y periodicidad |
 
 ---
 

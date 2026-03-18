@@ -114,7 +114,7 @@
             "state": {
               "type": "backlink",
               "state": {
-                "file": "bugs-scrapers-bocm-mivau.md",
+                "file": "v0.2 — Ingesta histórica y Tendencias.md",
                 "collapseAll": false,
                 "extraContext": false,
                 "sortOrder": "alphabetical",
@@ -124,7 +124,7 @@
                 "unlinkedCollapsed": true
               },
               "icon": "links-coming-in",
-              "title": "Enlaces entrantes de bugs-scrapers-bocm-mivau"
+              "title": "Enlaces entrantes de v0.2 — Ingesta histórica y Tendencias"
             }
           },
           {
@@ -202,22 +202,23 @@
       "bases:Crear nueva base": false
     }
   },
-  "active": "bbc46053e5ac18d9",
+  "active": "88ae6dbe8a65e5ad",
   "lastOpenFiles": [
+    "bugs-scrapers-bocm-mivau.md.tmp.37172.1773866440292",
+    "bugs-scrapers-bocm-mivau.md.tmp.37172.1773866423172",
+    "bugs-scrapers-bocm-mivau.md.tmp.37172.1773866417968",
+    "bugs-scrapers-bocm-mivau.md",
+    "CLAUDE.md",
     "v0.2 — Ingesta histórica y Tendencias.md.tmp.37172.1773865952746",
     "Bienvenido.md",
     "bugs-scrapers-bocm-mivau.md.tmp.37172.1773865944500",
     "bugs-scrapers-bocm-mivau.md.tmp.37172.1773865926961",
     "v0.2 — Ingesta histórica y Tendencias.md",
     "bugs-scrapers-bocm-mivau.md.tmp.37172.1773865901748",
-    "bugs-scrapers-bocm-mivau.md",
     "v0.2 — Ingesta histórica y Tendencias.md.tmp.37172.1773865669357",
     "v0.2 — Ingesta histórica y Tendencias.md.tmp.37172.1773865645686",
     "Bienvenido.md.tmp.37172.1773865044192",
     "v0.2 — Ingesta histórica y Tendencias.md.tmp.37172.1773864735013",
-    "v0.2 — Ingesta histórica y Tendencias.md.tmp.37172.1773864731068",
-    "bugs-scrapers-bocm-mivau.md.tmp.35596.1773862104103",
-    "v0.2 — Ingesta histórica y Tendencias.md.tmp.35596.1773862086833",
     "cree un enlace.md"
   ]
 }

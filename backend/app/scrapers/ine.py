@@ -28,6 +28,7 @@ class INEScraper:
         self.municipio_ine = settings.MUNICIPIO_CODIGO_INE  # 28065 = Getafe
         self.session = httpx.Client(
             timeout=60.0,
+            follow_redirects=True,
             headers={"User-Agent": "ProyectorUrbanisticoGetafe/0.1"}
         )
 

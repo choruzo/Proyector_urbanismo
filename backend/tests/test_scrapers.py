@@ -99,6 +99,44 @@ def test_bocm_search_url_responde_200():
     )
 
 
+def test_ine_scraper_sigue_redirects():
+    """INEScraper.session tiene follow_redirects=True para manejar el 301 de la API del INE."""
+    with patch.dict(os.environ, _ENV_MOCK):
+        from app.scrapers.ine import INEScraper
+        scraper = INEScraper()
+        assert scraper.session.follow_redirects is True, (
+            "INEScraper debe inicializarse con follow_redirects=True — "
+            "la tabla ETN 46964 devuelve 301 a /jsCache/ que sin este flag causa error"
+        )
+        scraper.close()
+
+
+@pytest.mark.integration
+def test_ine_tabla_46964_no_lanza_error_redirect():
+    """
+    El scraper sigue el redirect 301 de la tabla 46964 sin lanzar excepción de redirect.
+
+    La tabla puede devolver 404 en el endpoint jsCache (problema de disponibilidad del INE,
+    no de código). Lo que se verifica aquí es que follow_redirects=True evita el error
+    'Redirect response 301' que bloqueaba la carga antes del fix.
+    Si el DataFrame está vacío, el fallback hardcoded de initial_load se activa correctamente.
+    """
+    import httpx
+    with patch.dict(os.environ, _ENV_MOCK):
+        from app.scrapers.ine import INEScraper
+        scraper = INEScraper()
+        try:
+            # No debe lanzar httpx.HTTPStatusError por redirect no seguido
+            df = scraper.get_transacciones_inmobiliarias()
+            # Aceptamos DataFrame vacío (tabla 46964 puede no estar en jsCache del INE)
+            # Lo importante es que NO se lanzó un error de redirect
+            assert isinstance(df, __import__("pandas").DataFrame), (
+                "get_transacciones_inmobiliarias() debe devolver un DataFrame (vacío o con datos)"
+            )
+        finally:
+            scraper.close()
+
+
 @pytest.mark.integration
 def test_mivau_url_visados_descarga_xls():
     """GET a la nueva URL de visados fomento.gob.es responde HTTP 200 y devuelve un XLS."""

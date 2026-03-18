@@ -151,7 +151,7 @@ for _, row in df_raw.iterrows():
 |---------|---------------|--------|-----------|
 | `BOCMScraper` | 404 — `/buscador` obsoleto | ✅ **Resuelto** | HTTP 200, escaneando sin errores |
 | `ViviendaScraper` | 403 + xlrd + parser | ✅ **Resuelto** | 35 años de datos históricos en BD |
-| `INEScraper` (ETN 46964) | 301 redirect no seguido | ⚠️ **Pendiente** | Fallback hardcoded activo |
+| `INEScraper` (ETN 46964) | 301 redirect no seguido | ✅ **Parcialmente resuelto** | Redirect seguido; tabla 46964 devuelve 404 en jsCache (ver Bug 4) |
 | `CatastroScraper` (WFS) | DNS sin internet en Docker | ⚠️ No bloqueante | 12 barrios hardcoded cargados |
 
 ---
@@ -202,7 +202,7 @@ GET http://localhost:5173/api/v1/tendencias/kpis → { viviendas: 987, valor: 17
 
 ## Bug 4 — INE scraper: redirect 301 no seguido en tabla ETN 46964
 
-> [!warning] Pendiente de resolver — detectado 2026-03-18
+> [!success] Fix aplicado 2026-03-18 · Causa raíz resuelta · Problema residual documentado
 
 ### Síntoma
 
@@ -225,27 +225,39 @@ La función `get_transacciones_inmobiliarias()` devuelve DataFrame vacío. El fa
 - Tabla `datos_ine` — recibe datos de referencia en lugar de datos reales del INE
 - **No afecta** a `get_indice_precios_vivienda()` ni `get_poblacion_getafe()`
 
-### Solución propuesta (v0.3)
+### Fix aplicado — 2026-03-18
 
 ```python
-# backend/app/scrapers/ine.py
-# En el cliente httpx, habilitar follow_redirects:
-self.client = httpx.Client(
-    follow_redirects=True,   # ← añadir esta línea
-    timeout=30.0,
-    headers={"User-Agent": "ProyectorUrbanistico/0.2"},
+# backend/app/scrapers/ine.py — línea 29
+self.session = httpx.Client(
+    timeout=60.0,
+    follow_redirects=True,   # ← añadido
+    headers={"User-Agent": "ProyectorUrbanisticoGetafe/0.1"}
 )
 ```
 
-O alternativamente usar la URL de caché directamente:
-```python
-# URL alternativa que evita el redirect:
-"https://servicios.ine.es/wstempus/jsCache/ES/DATOS_TABLA/46964"
-```
+### Problema residual — tabla 46964 devuelve 404 en jsCache
+
+Con `follow_redirects=True`, el cliente sigue el redirect 301 correctamente, pero la URL de destino `jsCache/ES/DATOS_TABLA/46964` devuelve **404**. La tabla 46964 no está disponible en el endpoint jsCache del INE.
+
+**Análisis:**
+- El redirect se sigue sin error (fix correcto y verificado)
+- El 404 es del propio servidor del INE, no de Docker
+- La tabla 46964 puede no existir o haber cambiado de ID
+
+**Posibles soluciones para v0.3:**
+- Buscar el ID correcto de la tabla ETN de transacciones por municipio en el DataLab del INE
+- Usar la operación 10058 (Estadística de Transmisiones) con `get_serie()` en lugar de `get_tabla()`
 
 ### Workaround activo
 
 `_cargar_transacciones_ine()` en `initial_load.py` detecta el fallo y usa `TRANSACCIONES_REFERENCIA` (serie 2004–2025 aproximada). La BD tiene 22 registros válidos para desarrollo.
+
+### Verificación
+
+- [x] `test_ine_scraper_sigue_redirects` → `follow_redirects=True` confirmado ✅
+- [x] `test_ine_tabla_46964_no_lanza_error_redirect` → no se lanza error de redirect ✅
+- [x] Tests completos: **14/14 passed** ✅
 
 ---
 

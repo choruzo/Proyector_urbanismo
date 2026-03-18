@@ -3,7 +3,12 @@
     "allow": [
       "Bash(find . -maxdepth 3 -type d -not -path */.* -not -path */node_modules* -not -path */__pycache__*)",
       "Bash(grep -E \"\\\\.\\(txt|md|yml|json|toml\\)$\")",
-      "Bash(xargs wc:*)"
+      "Bash(xargs wc:*)",
+      "Bash(docker compose:*)",
+      "Bash(curl -s http://localhost:8001/api/v1/health)",
+      "Bash(curl -s http://localhost:8001/docs)",
+      "Bash(curl -s http://localhost:8001/)",
+      "Bash(curl -s http://localhost:8001/docs -o /dev/null -w \"%{http_code}\")"
     ]
   }
 }

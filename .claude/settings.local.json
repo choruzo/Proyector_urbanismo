@@ -8,7 +8,12 @@
       "Bash(curl -s http://localhost:8001/api/v1/health)",
       "Bash(curl -s http://localhost:8001/docs)",
       "Bash(curl -s http://localhost:8001/)",
-      "Bash(curl -s http://localhost:8001/docs -o /dev/null -w \"%{http_code}\")"
+      "Bash(curl -s http://localhost:8001/docs -o /dev/null -w \"%{http_code}\")",
+      "Bash(for f:*)",
+      "Bash(do)",
+      "Bash(echo \"=== $f ===\")",
+      "Read(//d/Archivos/Javier/Scritp_python/Proyector_urbanismo/frontend/src/pages/**)",
+      "Bash(done)"
     ]
   }
 }

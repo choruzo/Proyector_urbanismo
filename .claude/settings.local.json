@@ -24,7 +24,8 @@
       "Bash(docker ps:*)",
       "Bash(python3 -c \":*)",
       "Skill(next-task:update-docs-around)",
-      "Skill(next-task:update-docs-around:*)"
+      "Skill(next-task:update-docs-around:*)",
+      "Bash(docker exec getafe_backend sh -c \"cd /app && python -c \"\":*)"
     ]
   }
 }

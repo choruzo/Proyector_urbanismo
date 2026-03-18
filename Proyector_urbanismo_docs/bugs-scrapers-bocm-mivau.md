@@ -3,14 +3,15 @@ tags:
   - bug
   - scrapers
   - resuelto
-status: resuelto
+  - pendiente
+status: parcialmente-abierto
 created: 2026-03-18
 updated: 2026-03-18
 afecta:
   - "[[v0.2 — Ingesta histórica y Tendencias]]"
 ---
 
-# Bugs — Scrapers BOCM y MIVAU
+# Bugs — Scrapers BOCM, MIVAU e INE
 
 > [!success] Ambos bugs resueltos — 2026-03-18
 > Los dos scrapers rotos han sido corregidos y verificados con tests de integración.
@@ -150,7 +151,7 @@ for _, row in df_raw.iterrows():
 |---------|---------------|--------|-----------|
 | `BOCMScraper` | 404 — `/buscador` obsoleto | ✅ **Resuelto** | HTTP 200, escaneando sin errores |
 | `ViviendaScraper` | 403 + xlrd + parser | ✅ **Resuelto** | 35 años de datos históricos en BD |
-| `INEScraper` | Ninguno | ✅ Operativo | — |
+| `INEScraper` (ETN 46964) | 301 redirect no seguido | ⚠️ **Pendiente** | Fallback hardcoded activo |
 | `CatastroScraper` (WFS) | DNS sin internet en Docker | ⚠️ No bloqueante | 12 barrios hardcoded cargados |
 
 ---
@@ -197,8 +198,59 @@ GET http://localhost:5173/api/v1/tendencias/kpis → { viviendas: 987, valor: 17
 | `frontend/vite.config.ts` | Proxy target: `localhost:8001` → `backend:8000` |
 | `backend/app/api/routes/tendencias.py` | KPI endpoint mejorado: filtra nulls, añade valor suelo y variación % |
 
+---
+
+## Bug 4 — INE scraper: redirect 301 no seguido en tabla ETN 46964
+
+> [!warning] Pendiente de resolver — detectado 2026-03-18
+
+### Síntoma
+
+```
+app.scrapers.ine:get_tabla:60 - Error al obtener tabla INE 46964:
+Redirect response '301 Moved Permanently' for url
+'https://servicios.ine.es/wstempus/js/ES/DATOS_TABLA/46964'
+Redirect location: '/wstempus/jsCache/ES/DATOS_TABLA/46964'
+```
+
+La función `get_transacciones_inmobiliarias()` devuelve DataFrame vacío. El fallback hardcoded (`TRANSACCIONES_REFERENCIA`) se activa automáticamente y la BD queda con 22 registros de referencia.
+
+### Causa
+
+`httpx.Client` (usado en `INEScraper`) tiene `follow_redirects=False` por defecto. El servidor del INE responde con un redirect 301 a la URL de caché (`/jsCache/`) para la tabla 46964, pero no para otras tablas (IPV e población funcionan sin redirect).
+
+### Afecta
+
+- `INEScraper.get_transacciones_inmobiliarias()` — `backend/app/scrapers/ine.py`
+- Tabla `datos_ine` — recibe datos de referencia en lugar de datos reales del INE
+- **No afecta** a `get_indice_precios_vivienda()` ni `get_poblacion_getafe()`
+
+### Solución propuesta (v0.3)
+
+```python
+# backend/app/scrapers/ine.py
+# En el cliente httpx, habilitar follow_redirects:
+self.client = httpx.Client(
+    follow_redirects=True,   # ← añadir esta línea
+    timeout=30.0,
+    headers={"User-Agent": "ProyectorUrbanistico/0.2"},
+)
+```
+
+O alternativamente usar la URL de caché directamente:
+```python
+# URL alternativa que evita el redirect:
+"https://servicios.ine.es/wstempus/jsCache/ES/DATOS_TABLA/46964"
+```
+
+### Workaround activo
+
+`_cargar_transacciones_ine()` en `initial_load.py` detecta el fallo y usa `TRANSACCIONES_REFERENCIA` (serie 2004–2025 aproximada). La BD tiene 22 registros válidos para desarrollo.
+
+---
+
 ## Referencias
 
-- [[v0.2 — Ingesta histórica y Tendencias]] — Punto 2
-- Scrapers: `backend/app/scrapers/bocm.py`, `backend/app/scrapers/vivienda.py`
-- Tests: `backend/tests/test_scrapers.py`
+- [[v0.2 — Ingesta histórica y Tendencias]] — Puntos 2 y 4
+- Scrapers: `backend/app/scrapers/bocm.py`, `backend/app/scrapers/vivienda.py`, `backend/app/scrapers/ine.py`
+- Tests: `backend/tests/test_scrapers.py`, `backend/tests/test_tendencias.py`

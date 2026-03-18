@@ -13,7 +13,9 @@
       "Bash(do)",
       "Bash(echo \"=== $f ===\")",
       "Read(//d/Archivos/Javier/Scritp_python/Proyector_urbanismo/frontend/src/pages/**)",
-      "Bash(done)"
+      "Bash(done)",
+      "Bash(python -m pytest tests/test_alembic.py -v --tb=short)",
+      "Bash(docker exec:*)"
     ]
   }
 }

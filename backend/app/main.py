@@ -7,7 +7,6 @@ from contextlib import asynccontextmanager
 from loguru import logger
 
 from app.core.config import settings
-from app.core.database import engine, Base
 from app.api.routes import tendencias, alertas, predicciones, mapa
 
 
@@ -15,9 +14,7 @@ from app.api.routes import tendencias, alertas, predicciones, mapa
 async def lifespan(app: FastAPI):
     """Inicio y cierre de la aplicación."""
     logger.info(f"Iniciando {settings.APP_NAME} v{settings.APP_VERSION}")
-    # Crear tablas si no existen (en producción usar Alembic)
-    Base.metadata.create_all(bind=engine)
-    logger.info("Base de datos lista")
+    logger.info("Esquema gestionado por Alembic — ejecutar: alembic upgrade head")
     yield
     logger.info("Cerrando aplicación")
 

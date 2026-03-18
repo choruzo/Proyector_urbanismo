@@ -72,7 +72,7 @@ Fuentes externas (BOCM, Catastro, INE, EMSV, BOE, Min. Vivienda)
 ### Backend (`backend/app/`)
 - `core/config.py` — Pydantic Settings; todas las variables de entorno centralizadas aquí
 - `core/database.py` — SQLAlchemy engine, `get_db` dependency injection
-- `models/` — ORM: `catastral.py` (Barrio, Parcela, ValorSuelo con geometría PostGIS), `construccion.py` (ObraNueva, VisadoEstadistico), `alertas.py` (Alerta, InversionPublica, ProyectoEMSV)
+- `models/` — ORM: `catastral.py` (Barrio, Parcela, ValorSuelo, ValorMercado con geometría PostGIS), `construccion.py` (ObraNueva, VisadoEstadistico), `alertas.py` (Alerta, InversionPublica, ProyectoEMSV), `ine.py` (DatoINE — indicadores estadísticos INE en bruto)
 - `api/routes/` — Endpoints agrupados: `tendencias.py`, `mapa.py` (GeoJSON), `alertas.py`, `predicciones.py`
 - `scrapers/` — Un módulo por fuente: `bocm.py`, `catastro.py`, `ine.py`, `vivienda.py`
 - `tasks/celery_app.py` — Configuración Celery + beat_schedule (crontab por fuente)
@@ -84,7 +84,7 @@ Fuentes externas (BOCM, Catastro, INE, EMSV, BOE, Min. Vivienda)
 - `services/api.ts` — Cliente Axios; todas las llamadas a `/api/v1` centralizadas aquí
 - `utils/format.ts` — Formateo de números, fechas, moneda
 
-El proxy Vite redirige `/api` → `http://localhost:8001` en desarrollo.
+El proxy Vite redirige `/api` → `http://backend:8000` en desarrollo (nombre de servicio Docker interno).
 
 ### Tareas Celery programadas
 | Tarea | Frecuencia |
@@ -104,4 +104,12 @@ Ver `.env.example`. Las más relevantes:
 - `ALLOWED_ORIGINS` — CORS (añadir dominios de producción)
 
 ## Estado del proyecto
-Actualmente en **v0.1 (scaffold)**. La estructura está completa pero los scrapers, modelos ML y la mayoría de endpoints devuelven datos de ejemplo o están pendientes de implementación. Roadmap: v0.2 ingesta histórica → v0.3 mapa → v0.4 alertas → v0.5 ML → v1.0 despliegue.
+Actualmente en **v0.2 (en progreso)**. v0.1 completado (scaffold). v0.2 avances:
+- ✅ Alembic configurado, 2 migraciones aplicadas (`0001` schema inicial + `c1b80c16bdda` nuevos modelos)
+- ✅ `initial_load` operativo: 12 barrios, 312 valores_suelo, 35 visados históricos (1991-2025)
+- ✅ Scrapers BOCM y MIVAU corregidos y operativos
+- ✅ Modelos adicionales: `DatoINE` (indicadores INE en bruto), `ValorMercado` (precios de mercado)
+- ⏳ Endpoints API con datos reales y tests pendientes (tareas 4.x)
+- ⏳ Frontend Tendencias funcional pendiente (tareas 5.x)
+
+Roadmap: v0.3 mapa → v0.4 alertas → v0.5 ML → v1.0 despliegue.

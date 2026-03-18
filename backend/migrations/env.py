@@ -39,16 +39,24 @@ target_metadata = Base.metadata
 def include_object(object, name, type_, reflected, compare_to):
     """
     Filtra los objetos a incluir en la migración.
-    Excluye tablas de extensiones PostGIS (spatial_ref_sys, geometry_columns, etc.)
+    - Excluye tablas PostGIS/TIGER que no forman parte de los modelos de la app.
+    - Solo se rastrean tablas definidas en Base.metadata (nuestros modelos).
     """
-    if type_ == "table" and name in (
-        "spatial_ref_sys",
-        "geometry_columns",
-        "geography_columns",
-        "raster_columns",
-        "raster_overviews",
-    ):
-        return False
+    if type_ == "table":
+        # Siempre excluir tablas de extensiones PostGIS
+        postgis_system = {
+            "spatial_ref_sys",
+            "geometry_columns",
+            "geography_columns",
+            "raster_columns",
+            "raster_overviews",
+        }
+        if name in postgis_system:
+            return False
+        # Excluir cualquier tabla ya existente en la BD que NO esté definida
+        # en nuestros modelos (p.ej. tablas TIGER del geocodificador PostGIS)
+        if reflected and name not in target_metadata.tables:
+            return False
     return True
 
 

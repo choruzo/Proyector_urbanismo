@@ -3,7 +3,7 @@ Modelos SQLAlchemy para datos catastrales y valor del suelo.
 Fuente principal: Dirección General del Catastro (sede.catastro.meh.es)
 """
 from datetime import datetime
-from sqlalchemy import Column, Integer, String, Float, Date, DateTime, ForeignKey, Text
+from sqlalchemy import Column, Integer, String, Float, Date, DateTime, ForeignKey, Text, Index
 from sqlalchemy.orm import relationship
 from geoalchemy2 import Geometry
 from app.core.database import Base
@@ -23,6 +23,7 @@ class Barrio(Base):
 
     parcelas = relationship("Parcela", back_populates="barrio")
     valores_suelo = relationship("ValorSuelo", back_populates="barrio")
+    valores_mercado = relationship("ValorMercado", back_populates="barrio")
 
 
 class Parcela(Base):
@@ -62,3 +63,28 @@ class ValorSuelo(Base):
     created_at = Column(DateTime, default=datetime.utcnow)
 
     barrio = relationship("Barrio", back_populates="valores_suelo")
+
+
+class ValorMercado(Base):
+    """
+    Precio de mercado (€/m²) obtenido de portales inmobiliarios o estadísticas ETN del INE.
+    Complementa a ValorSuelo (catastral/estimado) con precios de oferta/transacción real.
+    Portales soportados: 'idealista', 'fotocasa', 'ine_etn' (Estadística de Transmisiones).
+    """
+    __tablename__ = "valores_mercado"
+
+    id             = Column(Integer, primary_key=True)
+    barrio_id      = Column(Integer, ForeignKey("barrios.id"), nullable=True)
+    anno           = Column(Integer, nullable=False, index=True)
+    trimestre      = Column(Integer, nullable=True)       # 1-4; NULL = dato anual
+    precio_euro_m2 = Column(Float, nullable=False)        # €/m²
+    num_muestras   = Column(Integer, nullable=True)       # nº de anuncios u operaciones
+    portal         = Column(String(50))                   # "idealista", "fotocasa", "ine_etn"
+    tipo_inmueble  = Column(String(50))                   # "piso", "unifamiliar", "local"
+    created_at     = Column(DateTime, default=datetime.utcnow)
+
+    barrio = relationship("Barrio", back_populates="valores_mercado")
+
+    __table_args__ = (
+        Index("ix_valores_mercado_anno_barrio", "anno", "barrio_id"),
+    )

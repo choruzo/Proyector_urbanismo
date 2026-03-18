@@ -22,7 +22,9 @@
       "WebFetch(domain:apps.fomento.gob.es)",
       "Bash(docker cp:*)",
       "Bash(docker ps:*)",
-      "Bash(python3 -c \":*)"
+      "Bash(python3 -c \":*)",
+      "Skill(next-task:update-docs-around)",
+      "Skill(next-task:update-docs-around:*)"
     ]
   }
 }

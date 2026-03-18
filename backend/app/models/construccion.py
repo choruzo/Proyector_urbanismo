@@ -3,7 +3,7 @@ Modelos SQLAlchemy para obra nueva y licencias de edificación.
 Fuentes: Ministerio de Vivienda (visados), Ayuntamiento de Getafe (licencias)
 """
 from datetime import datetime, date
-from sqlalchemy import Column, Integer, String, Float, Date, DateTime, Boolean, Text, Enum
+from sqlalchemy import Column, Integer, String, Float, Date, DateTime, Boolean, Text, Enum, Index
 from sqlalchemy.orm import relationship
 from geoalchemy2 import Geometry
 from app.core.database import Base
@@ -74,3 +74,9 @@ class VisadoEstadistico(Base):
     presupuesto_total = Column(Float)
     fuente = Column(String(100), default="mivau")
     created_at = Column(DateTime, default=datetime.utcnow)
+
+    __table_args__ = (
+        Index("ix_visados_fuente", "fuente"),
+        Index("ix_visados_anno_fuente", "anno", "fuente"),
+        Index("ix_visados_anno_tipo", "anno", "tipo_obra"),
+    )

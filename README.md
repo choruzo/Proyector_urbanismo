@@ -124,7 +124,7 @@ docker compose exec backend alembic upgrade head
 docker compose exec backend python -m app.tasks.initial_load
 
 # Frontend disponible en http://localhost:5173
-# API disponible en http://localhost:8000/docs
+# API + Swagger disponible en http://localhost:8001/docs
 ```
 
 ---
@@ -132,7 +132,7 @@ docker compose exec backend python -m app.tasks.initial_load
 ## Roadmap
 
 - [X] **v0.1** — Scaffold completo, conexiones a fuentes, base de datos operativa
-- [ ] **v0.2** — Ingesta histórica de datos (2001-hoy), página de Tendencias funcional
+- [ ] **v0.2** — Ingesta histórica de datos (2001-hoy), página de Tendencias funcional *(en progreso: backend completado, frontend pendiente)*
 - [ ] **v0.3** — Mapa interactivo de valor del suelo por barrios
 - [ ] **v0.4** — Sistema de alertas BOCM/BOE automático
 - [ ] **v0.5** — Modelos de predicción ML integrados

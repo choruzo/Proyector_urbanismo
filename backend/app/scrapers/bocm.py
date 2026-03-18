@@ -17,7 +17,7 @@ from app.core.config import settings
 
 
 BOCM_BASE_URL = "https://www.bocm.es"
-BOCM_BUSCADOR_URL = "https://www.bocm.es/buscador"
+BOCM_SEARCH_URL = "https://www.bocm.es/advanced-search"  # /buscador fue renombrado en 2024
 BOE_API_BASE = "https://boe.es/diario_boe/xml.php"
 
 # Palabras clave para filtrar publicaciones relevantes de Getafe
@@ -49,41 +49,70 @@ class BOCMScraper:
     def buscar_publicaciones_getafe(self, fecha: date) -> list[dict]:
         """
         Busca en el BOCM publicaciones relacionadas con Getafe para una fecha dada.
-        Usa el buscador web del BOCM con filtro de texto.
+
+        Usa el buscador avanzado del portal BOCM (Drupal Views, SSR).
+        URL actualizada en 2024: /buscador → /advanced-search
+        Parámetros: keys (texto) + field_bulletin_field_date[value] (DD-MM-YYYY)
         """
         resultados = []
-        fecha_str = fecha.strftime("%d/%m/%Y")
+        fecha_str = fecha.strftime("%d-%m-%Y")  # formato Drupal: DD-MM-YYYY
 
         try:
             response = self.session.get(
-                BOCM_BUSCADOR_URL,
+                BOCM_SEARCH_URL,
                 params={
-                    "busqueda": "Getafe urbanismo",
-                    "fecha": fecha_str,
-                    "tipo": "1",
-                }
+                    "keys": "Getafe urbanismo",
+                    "field_bulletin_field_date[value]": fecha_str,
+                },
+                headers={
+                    **self.session.headers,
+                    "Referer": BOCM_BASE_URL,
+                },
             )
             response.raise_for_status()
             soup = BeautifulSoup(response.text, "lxml")
 
-            # Extraer resultados de búsqueda
-            for item in soup.select(".resultado-buscador, .item-boletin"):
-                titulo = item.select_one(".titulo, h3, h4")
-                enlace = item.select_one("a[href]")
-                descripcion = item.select_one(".descripcion, .resumen, p")
+            # Selectores Drupal Views (patrón estándar del CMS)
+            items = soup.select(".view-content .views-row")
+            if not items:
+                # Fallback: algunos temas Drupal omiten .view-content
+                items = soup.select(".views-row")
 
-                if not titulo:
+            if not items:
+                logger.debug(f"BOCM {fecha_str}: sin resultados en la página (fecha sin publicaciones o AJAX)")
+
+            for item in items:
+                # Título: campo Views o primer enlace del item
+                titulo_el = (
+                    item.select_one(".views-field-title a")
+                    or item.select_one(".views-field-field-bulletin-description a")
+                    or item.select_one("h3 a, h4 a, .field-content a")
+                )
+                enlace_el = item.select_one("a[href]")
+                desc_el = (
+                    item.select_one(".views-field-body .field-content")
+                    or item.select_one(".views-field-field-bulletin-description .field-content")
+                    or item.select_one("p")
+                )
+
+                if not titulo_el:
                     continue
 
-                titulo_text = titulo.get_text(strip=True)
-                # Filtrar por relevancia (keywords urbanísticos)
+                titulo_text = titulo_el.get_text(strip=True)
+                if not titulo_text:
+                    continue
+
+                # Filtrar por relevancia (keywords urbanísticos de Getafe)
                 if not any(kw.lower() in titulo_text.lower() for kw in KEYWORDS_URBANISMO):
                     continue
 
+                href = enlace_el["href"] if enlace_el else ""
+                url = (BOCM_BASE_URL + href) if href.startswith("/") else href or None
+
                 resultados.append({
                     "titulo": titulo_text,
-                    "descripcion": descripcion.get_text(strip=True) if descripcion else "",
-                    "url": BOCM_BASE_URL + enlace["href"] if enlace else None,
+                    "descripcion": desc_el.get_text(strip=True) if desc_el else "",
+                    "url": url,
                     "fecha_publicacion": fecha,
                     "fuente": "bocm",
                     "tipo": self._clasificar_tipo(titulo_text),

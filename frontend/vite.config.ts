@@ -13,7 +13,9 @@ export default defineConfig({
     port: 5173,
     proxy: {
       '/api': {
-        target: 'http://localhost:8001',
+        // En Docker: el servicio backend se llama "backend" en la red interna.
+        // En desarrollo local fuera de Docker: cambiar a http://localhost:8001
+        target: 'http://backend:8000',
         changeOrigin: true,
       },
     },

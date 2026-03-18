@@ -25,6 +25,8 @@ pandas==2.2.3
 numpy==2.1.2
 geopandas==1.0.1
 shapely==2.0.6
+xlrd>=2.0.1
+openpyxl>=3.1.0
 
 # Machine Learning / Predicciones
 scikit-learn==1.5.2

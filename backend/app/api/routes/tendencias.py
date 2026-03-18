@@ -12,16 +12,60 @@ router = APIRouter(prefix="/tendencias", tags=["Tendencias"])
 def get_kpis_overview(db: Session = Depends(get_db)):
     """Resumen ejecutivo: KPIs principales del año en curso."""
     anno_actual = 2026
-    # Último año con datos de visados
+
+    # Último año con viviendas registradas (no null)
     ultimo_visado = (
         db.query(VisadoEstadistico)
+        .filter(
+            VisadoEstadistico.trimestre == None,
+            VisadoEstadistico.numero_viviendas != None,
+        )
         .order_by(VisadoEstadistico.anno.desc())
         .first()
     )
+
+    # Valor medio del suelo del último año disponible (media de todos los barrios)
+    from sqlalchemy import func
+    ultimo_valor = (
+        db.query(func.avg(ValorSuelo.valor_medio_euro_m2))
+        .filter(
+            ValorSuelo.trimestre == None,
+            ValorSuelo.anno == (
+                db.query(func.max(ValorSuelo.anno))
+                .filter(ValorSuelo.trimestre == None)
+                .scalar_subquery()
+            ),
+        )
+        .scalar()
+    )
+
+    # Variación interanual del valor del suelo (último año vs anterior)
+    annos_con_datos = (
+        db.query(ValorSuelo.anno)
+        .filter(ValorSuelo.trimestre == None)
+        .distinct()
+        .order_by(ValorSuelo.anno.desc())
+        .limit(2)
+        .all()
+    )
+    variacion_valor = None
+    if len(annos_con_datos) == 2:
+        anno_prev = annos_con_datos[1][0]
+        valor_prev = (
+            db.query(func.avg(ValorSuelo.valor_medio_euro_m2))
+            .filter(ValorSuelo.trimestre == None, ValorSuelo.anno == anno_prev)
+            .scalar()
+        )
+        if valor_prev and ultimo_valor:
+            variacion_valor = round((ultimo_valor - valor_prev) / valor_prev * 100, 1)
+
     return {
         "anno": anno_actual,
+        "anno_ultimo_visado": ultimo_visado.anno if ultimo_visado else None,
         "visados_ultimo_anno": ultimo_visado.numero_visados if ultimo_visado else None,
         "viviendas_ultimo_anno": ultimo_visado.numero_viviendas if ultimo_visado else None,
+        "valor_suelo_medio_euro_m2": round(ultimo_valor, 0) if ultimo_valor else None,
+        "variacion_valor_pct": variacion_valor,
     }
 
 

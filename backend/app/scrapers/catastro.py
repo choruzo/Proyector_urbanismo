@@ -122,5 +122,146 @@ class CatastroScraper:
             logger.error(f"Error parseando respuesta municipio catastro: {e}")
             return []
 
+    @retry(stop=stop_after_attempt(2), wait=wait_exponential(min=2, max=10))
+    def get_zonas_catastrales_wfs(self) -> dict | None:
+        """
+        Descarga la capa de zonas catastrales (CP:CadastralZoning) del municipio
+        vía WFS INSPIRE del Catastro.
+
+        CP:CadastralZoning es una capa INSPIRE que contiene polígonos de zonas
+        catastrales con nombre/etiqueta. Para Getafe (código 28065) puede devolver
+        zonas que aproximen los barrios administrativos con sus geometrías reales.
+
+        En entorno de desarrollo Docker (sin acceso DNS a catastro.meh.es):
+        lanzará excepción → el caller captura y continúa sin geometría.
+
+        Returns:
+            GeoJSON dict con features de zonas catastrales, o None si el servicio
+            WFS no responde o no devuelve features para este municipio.
+        """
+        url = CATASTRO_WFS_URL
+        params = {
+            "SERVICE": "WFS",
+            "VERSION": "2.0.0",
+            "REQUEST": "GetFeature",
+            "TYPENAMES": "CP:CadastralZoning",
+            "COUNT": "500",
+            "CQL_FILTER": f"NationalCadastralReference LIKE '{self.codigo_municipio}%'",
+            "OUTPUTFORMAT": "application/json",
+            "SRSNAME": "EPSG:4326",
+        }
+        try:
+            response = self.session.get(url, params=params, timeout=60.0)
+            response.raise_for_status()
+            data = response.json()
+            n_features = len(data.get("features", []))
+            if n_features == 0:
+                logger.warning("WFS CadastralZoning: 0 features para Getafe — sin geometría de barrios")
+                return None
+            logger.info(f"WFS CadastralZoning Getafe: {n_features} zonas descargadas")
+            return data
+        except httpx.HTTPError as e:
+            logger.warning(f"WFS CadastralZoning no disponible ({e})")
+            return None
+
     def close(self):
         self.session.close()
+
+
+# ---------------------------------------------------------------------------
+# Helpers de geometría (funciones libres, no métodos de clase)
+# ---------------------------------------------------------------------------
+
+def _extraer_geometrias_zonas(
+    geojson: dict,
+    barrios_getafe: list[dict],
+) -> dict[str, dict]:
+    """
+    Intenta mapear features del GeoJSON de CadastralZoning a los barrios de Getafe
+    por coincidencia de nombre (primera palabra, case-insensitive).
+
+    Cada feature de CadastralZoning tiene propiedades como 'label', 'zoneType',
+    'levelName' o similares según la implementación INSPIRE del Catastro español.
+
+    Args:
+        geojson:         GeoJSON devuelto por get_zonas_catastrales_wfs()
+        barrios_getafe:  lista de dicts con al menos 'codigo' y 'nombre'
+
+    Returns:
+        dict {codigo_barrio: {"wkt": wkt_str, "superficie_m2": float}}
+        Si geopandas no está disponible o el mapeo falla → devuelve {}
+        (los barrios se insertarán sin geometría).
+    """
+    try:
+        import geopandas as gpd
+        from shapely.ops import unary_union
+        import math
+
+        features = geojson.get("features", [])
+        if not features:
+            return {}
+
+        gdf = gpd.GeoDataFrame.from_features(features, crs="EPSG:4326")
+
+        # Identificar columnas de texto que pueden contener nombres de zona
+        name_cols = [
+            c for c in gdf.columns
+            if any(k in c.lower() for k in ("label", "name", "nombre", "zone", "level"))
+            and gdf[c].dtype == object
+        ]
+
+        result: dict[str, dict] = {}
+        lat_ref = 40.3  # latitud media de Getafe para conversión de grados a metros
+
+        for datos in barrios_getafe:
+            codigo = datos["codigo"]
+            primera_palabra = datos["nombre"].split()[0].lower()
+            matched_geom = None
+
+            for col in name_cols:
+                mask = gdf[col].astype(str).str.lower().str.contains(
+                    primera_palabra, na=False, regex=False
+                )
+                matched = gdf[mask]
+                if not matched.empty:
+                    merged = unary_union(matched.geometry.values)
+                    matched_geom = merged
+                    logger.debug(
+                        f"Barrio {codigo} ({datos['nombre']}): match en col '{col}' "
+                        f"→ {len(matched)} zona(s)"
+                    )
+                    break
+
+            if matched_geom is None:
+                continue
+
+            # Convertir geometry a WKT extendido compatible con GeoAlchemy2
+            wkt_str = matched_geom.wkt
+            if not wkt_str.startswith("MULTIPOLYGON"):
+                # Envolver Polygon en MULTIPOLYGON si es necesario
+                if wkt_str.startswith("POLYGON"):
+                    wkt_str = f"MULTIPOLYGON({wkt_str[7:]})"
+
+            # Aproximación de superficie en m² (grados → metros en lat ~40°)
+            m_per_deg_lat = 111_320.0
+            m_per_deg_lon = 111_320.0 * math.cos(math.radians(lat_ref))
+            area_deg2 = matched_geom.area
+            area_m2 = area_deg2 * m_per_deg_lat * m_per_deg_lon
+
+            result[codigo] = {
+                "wkt": f"SRID=4326;{wkt_str}",
+                "superficie_m2": round(area_m2, 0),
+            }
+
+        logger.info(
+            f"_extraer_geometrias_zonas: {len(result)}/{len(barrios_getafe)} barrios "
+            f"mapeados desde {len(features)} zonas catastrales"
+        )
+        return result
+
+    except ImportError:
+        logger.warning("geopandas/shapely no disponible; barrios sin geometría")
+        return {}
+    except Exception as e:
+        logger.warning(f"Error extrayendo geometrías de zonas catastrales: {e}")
+        return {}

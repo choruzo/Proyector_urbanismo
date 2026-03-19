@@ -13,13 +13,16 @@ Uso:
     python -m app.tasks.initial_load --fuente vivienda --force  # recargar
 """
 import argparse
+import json
 import sys
+from pathlib import Path
 from loguru import logger
 from sqlalchemy.orm import Session
 
+from geoalchemy2.elements import WKTElement
 from app.core.config import settings
 from app.core.database import SessionLocal
-from app.scrapers.catastro import CatastroScraper
+from app.scrapers.catastro import CatastroScraper, _extraer_geometrias_zonas
 from app.scrapers.ine import INEScraper
 from app.scrapers.vivienda import ViviendaScraper
 from app.scrapers.bocm import BOCMScraper
@@ -58,14 +61,39 @@ IPV_HISTORICO: dict[int, float] = {
     2021: 130.4, 2022: 138.7, 2023: 144.9, 2024: 152.3, 2025: 158.1,
     2026: 163.0,
 }
-PRECIO_BASE_2026_EUR_M2 = 1_800.0  # €/m² media Getafe 2026 (portales inmobiliarios)
+# Precio base de fallback €/m² (sólo se usa si MIVAU SEDAL no responde)
+_PRECIO_BASE_FALLBACK = 1_800.0  # €/m² media Getafe 2026 — estimación manual
 
-# Factor de precio por barrio respecto a la media municipal
-COEF_BARRIO: dict[str, float] = {
+# Coeficientes de fallback por barrio (sólo si coef_barrio.json no se puede leer)
+_COEF_BARRIO_FALLBACK: dict[str, float] = {
     "GF01": 1.05, "GF02": 1.10, "GF03": 1.00, "GF04": 0.95,
     "GF05": 0.90, "GF06": 0.88, "GF07": 1.08, "GF08": 1.02,
     "GF09": 0.85, "GF10": 1.03, "GF11": 0.92, "GF12": 0.87,
 }
+
+
+def _cargar_coef_barrio() -> dict[str, float]:
+    """
+    Carga los coeficientes de precio por barrio desde el fichero de configuración
+    `backend/app/data/coef_barrio.json`.
+
+    Permite actualizar los coeficientes sin cambios de código (P1-B).
+    Fallback al dict hardcoded si el fichero no existe o tiene errores.
+    """
+    json_path = Path(__file__).parent.parent / "data" / "coef_barrio.json"
+    try:
+        raw = json.loads(json_path.read_text(encoding="utf-8"))
+        coef = {k: float(v) for k, v in raw.items() if k.startswith("GF")}
+        if not coef:
+            raise ValueError("El JSON no contiene claves GFxx válidas")
+        logger.info(f"Coef barrio: {len(coef)} valores cargados desde {json_path.name}")
+        return coef
+    except FileNotFoundError:
+        logger.warning(f"Fichero {json_path} no encontrado; usando coeficientes hardcoded")
+        return dict(_COEF_BARRIO_FALLBACK)
+    except Exception as e:
+        logger.warning(f"Error cargando coef_barrio.json ({e}); usando coeficientes hardcoded")
+        return dict(_COEF_BARRIO_FALLBACK)
 
 # Compraventas de vivienda en Getafe — serie histórica anual estimada
 # Fuente: INE — Estadística de Transmisiones de Derechos de la Propiedad (ETN)
@@ -150,17 +178,20 @@ def _cargar_barrios(db: Session, force: bool = False) -> dict:
             logger.info(f"Barrios ya cargados ({count} registros). Usa --force para recargar.")
             return {"insertados": 0, "omitidos": count, "errores": 0}
 
-    # Intentar WFS solo para comprobar conectividad con Catastro
+    # --- P1-C: Intentar obtener geometrías reales de barrios vía CadastralZoning WFS ---
+    # En entorno dev Docker (sin DNS externo) fallará silenciosamente → barrios sin geom.
+    # En producción con acceso a internet → almacena polígonos reales en barrios.geom.
+    barrio_geoms: dict[str, dict] = {}
     scraper = CatastroScraper()
     try:
-        geojson = scraper.get_poligono_municipio_wfs()
-        if geojson:
-            n_parcelas = len(geojson.get("features", []))
-            logger.info(f"WFS Catastro OK: {n_parcelas} parcelas descargadas (referencia de conectividad)")
+        zoning_geojson = scraper.get_zonas_catastrales_wfs()
+        if zoning_geojson and zoning_geojson.get("features"):
+            barrio_geoms = _extraer_geometrias_zonas(zoning_geojson, BARRIOS_GETAFE)
+            logger.info(f"CadastralZoning: {len(barrio_geoms)}/12 barrios con geometría mapeada")
         else:
-            logger.warning("WFS Catastro sin datos; procediendo con barrios hardcoded")
+            logger.warning("CadastralZoning: sin datos — barrios se insertan sin geometría (normal en dev)")
     except Exception as e:
-        logger.warning(f"WFS Catastro no disponible ({e}); procediendo con barrios hardcoded")
+        logger.warning(f"WFS CadastralZoning falló ({e}); barrios sin geometría")
     finally:
         scraper.close()
 
@@ -168,17 +199,31 @@ def _cargar_barrios(db: Session, force: bool = False) -> dict:
     try:
         for datos in BARRIOS_GETAFE:
             existe = db.query(Barrio).filter(Barrio.codigo == datos["codigo"]).first()
+            geom_data = barrio_geoms.get(datos["codigo"])
+
             if existe:
+                # Con --force: actualizar geometría si la tenemos ahora
+                if force and geom_data:
+                    existe.geom = WKTElement(geom_data["wkt"], srid=4326)
+                    existe.superficie_m2 = geom_data["superficie_m2"]
                 omitidos += 1
                 continue
+
             db.add(Barrio(
                 codigo=datos["codigo"],
                 nombre=datos["nombre"],
                 distrito=datos["distrito"],
+                geom=WKTElement(geom_data["wkt"], srid=4326) if geom_data else None,
+                superficie_m2=geom_data["superficie_m2"] if geom_data else None,
             ))
             insertados += 1
+
         db.commit()
-        logger.info(f"Barrios: {insertados} insertados, {omitidos} omitidos")
+        geom_count = len(barrio_geoms)
+        logger.info(
+            f"Barrios: {insertados} insertados, {omitidos} omitidos"
+            + (f", {geom_count} con geometría real" if geom_count else " (sin geometría — dev)")
+        )
     except Exception as e:
         db.rollback()
         logger.error(f"Error insertando barrios: {e}")
@@ -208,7 +253,29 @@ def _cargar_valores_suelo(db: Session, force: bool = False) -> dict:
         logger.error("No hay barrios en BD. Ejecuta primero: --fuente barrios")
         return {"insertados": 0, "omitidos": 0, "errores": 1}
 
-    # Intentar enriquecer el IPV con datos reales del INE
+    # --- P1-B: Coeficientes por barrio desde JSON (configurable sin cambios de código) ---
+    coef_barrio = _cargar_coef_barrio()
+
+    # --- P1-A: Precio base €/m² desde MIVAU SEDAL (fuente real, con fallback) ---
+    precio_base_2026 = _PRECIO_BASE_FALLBACK
+    scraper_vivienda = ViviendaScraper()
+    try:
+        precio_mivau = scraper_vivienda.get_precio_m2_vivienda_madrid()
+        if precio_mivau is not None:
+            precio_base_2026 = precio_mivau
+            logger.info(f"PRECIO_BASE: {precio_base_2026:.0f} €/m² (fuente: MIVAU SEDAL)")
+        else:
+            logger.warning(
+                f"PRECIO_BASE: MIVAU no disponible; usando fallback {_PRECIO_BASE_FALLBACK} €/m²"
+            )
+    except Exception as e:
+        logger.warning(
+            f"PRECIO_BASE: error MIVAU ({e}); usando fallback {_PRECIO_BASE_FALLBACK} €/m²"
+        )
+    finally:
+        scraper_vivienda.close()
+
+    # --- Enriquecer IPV con datos reales del INE (lógica existente sin cambios) ---
     ipv_por_anno: dict[int, float] = dict(IPV_HISTORICO)
     scraper = INEScraper()
     try:
@@ -247,9 +314,15 @@ def _cargar_valores_suelo(db: Session, force: bool = False) -> dict:
     ipv_2026 = ipv_por_anno.get(2026, IPV_HISTORICO[2026])
     insertados = omitidos = errores = 0
 
+    # Determinar etiqueta de fuente para trazabilidad en BD
+    fuente_label = (
+        "mivau_sedal_ipv" if precio_base_2026 != _PRECIO_BASE_FALLBACK
+        else "ine_ipv_estimado"
+    )
+
     try:
         for barrio in barrios:
-            coef = COEF_BARRIO.get(barrio.codigo, 1.0)
+            coef = coef_barrio.get(barrio.codigo, 1.0)
             for anno in range(settings.YEAR_START, settings.YEAR_END + 1):
                 existe = db.query(ValorSuelo).filter(
                     ValorSuelo.barrio_id == barrio.id,
@@ -261,14 +334,14 @@ def _cargar_valores_suelo(db: Session, force: bool = False) -> dict:
                     continue
 
                 ipv_anno = ipv_por_anno.get(anno, IPV_HISTORICO.get(anno, ipv_2026))
-                precio = round(PRECIO_BASE_2026_EUR_M2 * coef * (ipv_anno / ipv_2026), 2)
+                precio = round(precio_base_2026 * coef * (ipv_anno / ipv_2026), 2)
 
                 db.add(ValorSuelo(
                     barrio_id=barrio.id,
                     anno=anno,
                     trimestre=None,
                     valor_medio_euro_m2=precio,
-                    fuente="ine_ipv_estimado",
+                    fuente=fuente_label,
                 ))
                 insertados += 1
 

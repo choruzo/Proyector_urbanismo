@@ -1,0 +1,18 @@
+{
+  "_comment": "Coeficientes de precio por barrio relativos a la media municipal de Getafe. Fuente actual: estimación manual basada en portales inmobiliarios 2024-2026. Actualizable sin cambios de código. Para derivar coeficientes reales, consultar Catastro OVC o Estadística Registral Inmobiliaria por sección censal.",
+  "_version": "0.2",
+  "_actualizado": "2026-03-19",
+  "_fuente": "estimacion_manual",
+  "GF01": 1.05,
+  "GF02": 1.10,
+  "GF03": 1.00,
+  "GF04": 0.95,
+  "GF05": 0.90,
+  "GF06": 0.88,
+  "GF07": 1.08,
+  "GF08": 1.02,
+  "GF09": 0.85,
+  "GF10": 1.03,
+  "GF11": 0.92,
+  "GF12": 0.87
+}

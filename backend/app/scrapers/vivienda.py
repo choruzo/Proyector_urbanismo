@@ -41,6 +41,14 @@ URLS_ESTADISTICAS = {
     "viviendas_libres_terminadas": (
         "https://apps.fomento.gob.es/BoletinOnline2/sedal/32201000.XLS"
     ),
+    # Provincia de Madrid — Precio medio €/m² vivienda libre tasada
+    # NOTA: MIVAU no publica precios en el formato SEDAL (apps.fomento.gob.es/Boletinonline/sedal/).
+    # El dato de precio se publica en el Portal Estadístico MIVAU (navegación manual necesaria).
+    # URL placeholder — actualizar cuando se identifique la URL de descarga directa.
+    # Ref: https://www.mivau.gob.es/vivienda/estadisticas/precio-vivienda-libre
+    "precios_madrid_vivienda_libre": (
+        "https://apps.fomento.gob.es/BoletinOnline2/sedal/09110010.XLS"
+    ),
 }
 
 
@@ -178,6 +186,80 @@ class ViviendaScraper:
         except Exception as e:
             logger.error(f"Error procesando fichero viviendas libres: {e}")
             return pd.DataFrame()
+
+    def get_precio_m2_vivienda_madrid(self) -> float | None:
+        """
+        Descarga el precio medio €/m² de vivienda libre tasada en la provincia de Madrid
+        desde el boletín estadístico SEDAL del Ministerio de Fomento/MIVAU.
+
+        URL candidata: 09110010.XLS (09=Madrid provincia, 11=precios tasación,
+        0010=vivienda libre media). Sigue el mismo patrón de códigos SEDAL que las
+        series de visados (09032810.XLS).
+
+        Estrategia de parseo: escanea todas las celdas numéricas en busca de valores
+        en el rango [800, 8000] €/m², que discrimina automáticamente los precios
+        reales de los recuentos de viviendas (que son decenas de miles) y otros
+        datos de metadatos.
+
+        Returns:
+            Precio más reciente encontrado (float), o None si el fichero no está
+            disponible o no contiene datos en el rango esperado.
+            El caller en initial_load.py usará 1800.0 €/m² como fallback.
+        """
+        contenido = self._descargar_fichero(URLS_ESTADISTICAS["precios_madrid_vivienda_libre"])
+        if contenido is None:
+            logger.warning("SEDAL precios: fichero no disponible (09110010.XLS)")
+            return None
+
+        try:
+            df_raw = pd.read_excel(BytesIO(contenido), sheet_name=0, header=None)
+
+            # Buscar pares (año, precio€/m²) escaneando todas las filas
+            precio_por_anno: list[tuple[int, float]] = []
+            current_year: int | None = None
+
+            for _, row in df_raw.iterrows():
+                c0 = row.iloc[0]
+
+                # Detectar cambio de año en la primera columna
+                if isinstance(c0, (int, float)) and not pd.isna(c0):
+                    try:
+                        y = int(c0)
+                        if 1990 < y < 2030:
+                            current_year = y
+                    except (TypeError, ValueError):
+                        pass
+
+                if current_year is None:
+                    continue
+
+                # Buscar en el resto de la fila valores en rango plausible €/m²
+                for val in row.iloc[1:]:
+                    if isinstance(val, (int, float)) and not pd.isna(val):
+                        v = float(val)
+                        if 800.0 < v < 8_000.0:
+                            precio_por_anno.append((current_year, v))
+                            break  # un precio por fila es suficiente
+
+            if not precio_por_anno:
+                logger.warning(
+                    "SEDAL precios: no se encontraron valores en rango €/m² [800-8000]"
+                    " — el fichero puede contener datos distintos a precios"
+                )
+                return None
+
+            # Usar el valor del año más reciente disponible
+            precio_por_anno.sort(key=lambda t: t[0], reverse=True)
+            anno_ref, precio = precio_por_anno[0]
+            logger.info(
+                f"SEDAL precios Madrid provincia: {precio:.0f} €/m² (año {anno_ref})"
+                f" — {len(precio_por_anno)} años disponibles"
+            )
+            return precio
+
+        except Exception as e:
+            logger.error(f"Error procesando SEDAL precios (09110010.XLS): {e}")
+            return None
 
     def close(self):
         self.session.close()

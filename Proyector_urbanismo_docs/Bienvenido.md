@@ -17,7 +17,8 @@ updated: 2026-03-18
 
 | Documento | Descripción |
 |---|---|
-| [[v0.2 — Ingesta histórica y Tendencias]] | Roadmap activo — ingesta de datos históricos y página de Tendencias |
+| [[v0.2 — Ingesta histórica y Tendencias]] | Roadmap completado — ingesta histórica, Alembic y Tendencias funcional |
+| [[v0.3 — Mapa interactivo de valor del suelo]] | Roadmap activo — geometrías de barrios, coropletas y UX del mapa |
 | [[bugs-scrapers-bocm-mivau]] | Bugs resueltos en scrapers BOCM y MIVAU (2026-03-18) |
 | [[Fuentes de datos]] | Catálogo de fuentes externas — APIs, scrapers y periodicidad |
 
@@ -25,8 +26,8 @@ updated: 2026-03-18
 
 ## Estado actual del proyecto
 
-**Versión:** v0.2 en progreso
-**Última actualización:** 2026-03-18
+**Versión:** v0.3 en progreso
+**Última actualización:** 2026-03-19
 
 ### Migraciones Alembic
 - `0001` — Schema inicial (8 tablas, 4 enums, PostGIS)

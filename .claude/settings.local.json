@@ -29,7 +29,8 @@
       "WebFetch(domain:servicios.ine.es)",
       "WebFetch(domain:www.ine.es)",
       "WebFetch(domain:datos.gob.es)",
-      "WebFetch(domain:www.transportes.gob.es)"
+      "WebFetch(domain:www.transportes.gob.es)",
+      "Bash(curl -s \"https://servicios.ine.es/wstempus/js/ES/SERIES_TABLA/6150?det=2\" -L --max-time 30)"
     ]
   }
 }

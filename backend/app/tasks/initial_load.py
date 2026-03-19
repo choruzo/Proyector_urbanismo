@@ -447,11 +447,13 @@ def _cargar_transacciones_ine(db: Session, force: bool = False) -> dict:
     """
     Pobla la tabla `datos_ine` con la serie histórica de compraventas de vivienda.
 
-    Intenta obtener datos reales via INE (tabla ETN 46964). Si la API no responde
-    o devuelve datos no parseables, usa la serie de referencia hardcoded.
-    Almacena con indicador="transacciones", unidad="operaciones".
+    Obtiene datos reales via INE ETDP serie ETDP3899 (Madrid provincia, compraventa
+    general, mensual 2007-hoy). El scraper agrega los datos mensuales por año y
+    devuelve columnas [anno, transacciones].
+    Si la API no responde, usa la serie de referencia hardcoded como fallback.
+    Almacena con indicador="transacciones", fuente="ine_etdp", unidad="operaciones".
     """
-    logger.info("=== Cargando transacciones inmobiliarias (INE) ===")
+    logger.info("=== Cargando transacciones inmobiliarias (INE ETDP3899 — Madrid provincia) ===")
 
     if not force:
         count = db.query(DatoINE).filter(DatoINE.indicador == "transacciones").count()
@@ -459,36 +461,32 @@ def _cargar_transacciones_ine(db: Session, force: bool = False) -> dict:
             logger.info(f"Transacciones ya cargadas ({count} registros). Usa --force para recargar.")
             return {"insertados": 0, "omitidos": count, "errores": 0}
 
+    # Con --force: eliminar registros existentes para recargar desde cero
+    if force:
+        eliminados = db.query(DatoINE).filter(DatoINE.indicador == "transacciones").delete()
+        db.commit()
+        if eliminados:
+            logger.info(f"Force: {eliminados} registros de transacciones eliminados para recargar")
+
     datos_a_insertar: dict[int, int] = {}
     scraper = INEScraper()
     try:
-        import pandas as pd
         df = scraper.get_transacciones_inmobiliarias()
         if not df.empty:
-            # El INE devuelve series con columna 'Nombre' (periodo) y 'Valor'
-            periodo_col = next(
-                (c for c in df.columns if "periodo" in c.lower() or "nombre" in c.lower()),
-                None,
-            )
-            valor_col = next(
-                (c for c in df.columns if "valor" in c.lower()),
-                None,
-            )
-            if periodo_col and valor_col:
-                df[periodo_col] = pd.to_numeric(
-                    df[periodo_col].astype(str).str[:4], errors="coerce"
-                )
-                df[valor_col] = pd.to_numeric(df[valor_col], errors="coerce")
-                df_valid = df.dropna(subset=[periodo_col, valor_col])
-                for _, row in df_valid.iterrows():
-                    anno = int(row[periodo_col])
+            # get_transacciones_inmobiliarias() devuelve [anno, transacciones] — datos anuales agregados
+            if "anno" in df.columns and "transacciones" in df.columns:
+                for _, row in df.dropna(subset=["anno", "transacciones"]).iterrows():
+                    anno = int(row["anno"])
                     if 2001 <= anno <= 2030:
-                        datos_a_insertar[anno] = int(row[valor_col])
-                logger.info(f"INE ETN: {len(datos_a_insertar)} años de transacciones recibidos")
+                        datos_a_insertar[anno] = int(row["transacciones"])
+                logger.info(
+                    f"INE ETDP3899: {len(datos_a_insertar)} años de transacciones recibidos "
+                    f"(Madrid provincia — proxy para Getafe)"
+                )
             else:
-                logger.warning("INE ETN: columnas no reconocidas; usando datos de referencia")
+                logger.warning(f"INE ETDP: columnas no reconocidas {list(df.columns)}; usando datos de referencia")
         else:
-            logger.warning("INE ETN: respuesta vacía; usando datos de referencia")
+            logger.warning("INE ETDP: respuesta vacía; usando datos de referencia")
     except Exception as e:
         logger.warning(f"Error obteniendo transacciones INE ({e}); usando datos de referencia")
     finally:
@@ -499,17 +497,9 @@ def _cargar_transacciones_ine(db: Session, force: bool = False) -> dict:
         if anno not in datos_a_insertar:
             datos_a_insertar[anno] = valor
 
-    insertados = omitidos = errores = 0
+    insertados = errores = 0
     try:
         for anno, valor in sorted(datos_a_insertar.items()):
-            existe = db.query(DatoINE).filter(
-                DatoINE.indicador == "transacciones",
-                DatoINE.anno == anno,
-                DatoINE.trimestre.is_(None),
-            ).first()
-            if existe:
-                omitidos += 1
-                continue
             db.add(DatoINE(
                 indicador="transacciones",
                 anno=anno,
@@ -519,13 +509,13 @@ def _cargar_transacciones_ine(db: Session, force: bool = False) -> dict:
             ))
             insertados += 1
         db.commit()
-        logger.info(f"Transacciones INE: {insertados} insertados, {omitidos} omitidos")
+        logger.info(f"Transacciones INE: {insertados} insertados")
     except Exception as e:
         db.rollback()
         logger.error(f"Error insertando transacciones: {e}")
         errores += 1
 
-    return {"insertados": insertados, "omitidos": omitidos, "errores": errores}
+    return {"insertados": insertados, "omitidos": 0, "errores": errores}
 
 
 # ---------------------------------------------------------------------------

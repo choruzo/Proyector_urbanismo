@@ -1,13 +1,14 @@
 """
-Tests para los scrapers BOCM y MIVAU tras corrección de URLs rotas.
+Tests para los scrapers BOCM, MIVAU e INE.
 
-Tests estáticos (3): verifican que las constantes apuntan a las URLs correctas.
-Tests de integración (2): verifican conectividad HTTP real (requieren red).
+Tests estáticos (4): verifican constantes y configuración sin red ni BD.
+Tests de integración (3): verifican conectividad HTTP real (requieren red).
   → Excluirlos en CI sin red: pytest -m "not integration"
 
 Refs:
   - Bug BOCM: /buscador (404) → /advanced-search (200) — bocm.py
   - Bug MIVAU: mivau.gob.es (403) → apps.fomento.gob.es (200) — vivienda.py
+  - Bug INE ETN: tabla 46964 inexistente → serie ETDP3899 (Madrid provincia) — ine.py
 """
 import os
 import sys
@@ -100,38 +101,60 @@ def test_bocm_search_url_responde_200():
 
 
 def test_ine_scraper_sigue_redirects():
-    """INEScraper.session tiene follow_redirects=True para manejar el 301 de la API del INE."""
+    """INEScraper.session tiene follow_redirects=True (defensa ante redirects de la API INE)."""
     with patch.dict(os.environ, _ENV_MOCK):
         from app.scrapers.ine import INEScraper
         scraper = INEScraper()
         assert scraper.session.follow_redirects is True, (
-            "INEScraper debe inicializarse con follow_redirects=True — "
-            "la tabla ETN 46964 devuelve 301 a /jsCache/ que sin este flag causa error"
+            "INEScraper debe inicializarse con follow_redirects=True"
         )
         scraper.close()
 
 
-@pytest.mark.integration
-def test_ine_tabla_46964_no_lanza_error_redirect():
+def test_ine_transacciones_usa_serie_etdp3899():
     """
-    El scraper sigue el redirect 301 de la tabla 46964 sin lanzar excepción de redirect.
+    get_transacciones_inmobiliarias() usa la serie ETDP3899, no la tabla 46964.
 
-    La tabla puede devolver 404 en el endpoint jsCache (problema de disponibilidad del INE,
-    no de código). Lo que se verifica aquí es que follow_redirects=True evita el error
-    'Redirect response 301' que bloqueaba la carga antes del fix.
-    Si el DataFrame está vacío, el fallback hardcoded de initial_load se activa correctamente.
+    La tabla 46964 no existía en el INE (404 real tras redirect 301 a jsCache).
+    La operación ETDP (Id=7) no publica datos municipales — el nivel más fino
+    es provincia. Serie ETDP3899 = Madrid provincia, compraventa general.
     """
-    import httpx
+    content = (
+        Path(__file__).parent.parent / "app" / "scrapers" / "ine.py"
+    ).read_text(encoding="utf-8")
+    assert "ETDP3899" in content, (
+        "ine.py debe usar la serie ETDP3899 para transacciones inmobiliarias"
+    )
+    assert 'get_tabla("46964")' not in content, (
+        "ine.py no debe usar get_tabla('46964') — esa tabla no existe en el INE"
+    )
+
+
+@pytest.mark.integration
+def test_ine_etdp3899_devuelve_datos_madrid():
+    """
+    La serie ETDP3899 (Madrid provincia, compraventa general) devuelve datos reales del INE.
+
+    Verifica que get_transacciones_inmobiliarias() retorna un DataFrame con datos anuales
+    para al menos los años 2007-2020 (rango estable disponible en la serie ETDP).
+    """
     with patch.dict(os.environ, _ENV_MOCK):
         from app.scrapers.ine import INEScraper
         scraper = INEScraper()
         try:
-            # No debe lanzar httpx.HTTPStatusError por redirect no seguido
             df = scraper.get_transacciones_inmobiliarias()
-            # Aceptamos DataFrame vacío (tabla 46964 puede no estar en jsCache del INE)
-            # Lo importante es que NO se lanzó un error de redirect
-            assert isinstance(df, __import__("pandas").DataFrame), (
-                "get_transacciones_inmobiliarias() debe devolver un DataFrame (vacío o con datos)"
+            assert not df.empty, (
+                "get_transacciones_inmobiliarias() devolvió DataFrame vacío — "
+                "la serie ETDP3899 debería tener datos 2007-hoy"
+            )
+            assert "anno" in df.columns, "El DataFrame debe tener columna 'anno'"
+            assert "transacciones" in df.columns, "El DataFrame debe tener columna 'transacciones'"
+            assert len(df) >= 10, (
+                f"Se esperan al menos 10 años de datos, se obtuvieron {len(df)}"
+            )
+            # Verificar rango razonable (Madrid provincia: ~41k-85k transacciones/año)
+            assert df["transacciones"].max() > 10_000, (
+                "El total anual de compraventas en Madrid provincia debe superar 10.000"
             )
         finally:
             scraper.close()

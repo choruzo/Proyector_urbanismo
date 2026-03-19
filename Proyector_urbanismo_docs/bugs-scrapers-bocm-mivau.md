@@ -3,19 +3,18 @@ tags:
   - bug
   - scrapers
   - resuelto
-  - pendiente
-status: parcialmente-abierto
+status: resuelto
 created: 2026-03-18
-updated: 2026-03-18
+updated: 2026-03-19
 afecta:
   - "[[v0.2 — Ingesta histórica y Tendencias]]"
 ---
 
 # Bugs — Scrapers BOCM, MIVAU e INE
 
-> [!success] Ambos bugs resueltos — 2026-03-18
-> Los dos scrapers rotos han sido corregidos y verificados con tests de integración.
-> `test_scrapers.py` — 5/5 tests pasan (3 estáticos + 2 integración con red real).
+> [!success] Todos los bugs resueltos — 2026-03-19
+> Los cuatro bugs documentados han sido corregidos y verificados con tests.
+> `test_scrapers.py` — 7 tests (4 estáticos + 3 integración con red real).
 
 ---
 
@@ -158,7 +157,7 @@ for _, row in df_raw.iterrows():
 |---------|---------------|--------|-----------|
 | `BOCMScraper` | 404 — `/buscador` obsoleto | ✅ **Resuelto** | HTTP 200, escaneando sin errores |
 | `ViviendaScraper` | 403 + xlrd + parser | ✅ **Resuelto** | 35 años de datos históricos en BD |
-| `INEScraper` (ETN 46964) | 301 redirect no seguido | ✅ **Parcialmente resuelto** | Redirect seguido; tabla 46964 devuelve 404 en jsCache (ver Bug 4) |
+| `INEScraper` (ETN 46964) | Tabla inexistente (404) | ✅ **Resuelto** | Serie ETDP3899 (Madrid prov.) — datos reales 2007-hoy |
 | `CatastroScraper` (WFS) | DNS sin internet en Docker | ⚠️ No bloqueante | 12 barrios hardcoded cargados |
 
 ---
@@ -207,64 +206,77 @@ GET http://localhost:5173/api/v1/tendencias/kpis → { viviendas: 987, valor: 17
 
 ---
 
-## Bug 4 — INE scraper: redirect 301 no seguido en tabla ETN 46964
+## Bug 4 — INE scraper: tabla ETN 46964 inexistente → serie ETDP3899
 
-> [!success] Fix aplicado 2026-03-18 · Causa raíz resuelta · Problema residual documentado
+> [!success] Resuelto completamente — 2026-03-19
 
-### Síntoma
+### Síntoma original
 
 ```
 app.scrapers.ine:get_tabla:60 - Error al obtener tabla INE 46964:
 Redirect response '301 Moved Permanently' for url
 'https://servicios.ine.es/wstempus/js/ES/DATOS_TABLA/46964'
 Redirect location: '/wstempus/jsCache/ES/DATOS_TABLA/46964'
+→ HTTP 404 en /wstempus/jsCache/ES/DATOS_TABLA/46964
 ```
 
-La función `get_transacciones_inmobiliarias()` devuelve DataFrame vacío. El fallback hardcoded (`TRANSACCIONES_REFERENCIA`) se activa automáticamente y la BD queda con 22 registros de referencia.
+`get_transacciones_inmobiliarias()` devuelve DataFrame vacío. Fallback `TRANSACCIONES_REFERENCIA` activo → 22 filas hardcoded en `datos_ine`.
 
-### Causa
+### Causa raíz (diagnóstico completo — 2026-03-19)
 
-`httpx.Client` (usado en `INEScraper`) tiene `follow_redirects=False` por defecto. El servidor del INE responde con un redirect 301 a la URL de caché (`/jsCache/`) para la tabla 46964, pero no para otras tablas (IPV e población funcionan sin redirect).
+Dos errores encadenados en el scraper original:
 
-### Afecta
+1. **Operación incorrecta**: el comentario del módulo citaba la operación `10058` para ETN. La operación real es **ETDP** (Id=7, Cod_IOE=30168). La operación 10058 no existe en el wstempus/Tempus3 del INE → devuelve `[]`.
+
+2. **Tabla inexistente**: la tabla `46964` nunca existió en el INE. El ID era incorrecto desde el inicio → 404 real (no problema de redirect). La API INE usa la tabla 46964 como alias caché que también falla.
+
+3. **Sin datos municipales**: la operación ETDP **no publica datos a nivel municipal** (solo CCAA y provincia). Variables disponibles: `CCAA`, `PROV`. Getafe a nivel municipal no existe en esta operación del INE.
+
+### Afectaba
 
 - `INEScraper.get_transacciones_inmobiliarias()` — `backend/app/scrapers/ine.py`
-- Tabla `datos_ine` — recibe datos de referencia en lugar de datos reales del INE
-- **No afecta** a `get_indice_precios_vivienda()` ni `get_poblacion_getafe()`
+- Tabla `datos_ine` — datos de referencia hardcoded en lugar de datos reales
+- Documentación del módulo (operación 10058 incorrecta)
 
-### Fix aplicado — 2026-03-18
+### Fix aplicado — 2026-03-19
+
+**Serie correcta identificada:** `ETDP3899` — Madrid provincia, compraventa general (vivienda libre + protegida), mensual 2007-hoy. 228 puntos mensuales verificados.
 
 ```python
-# backend/app/scrapers/ine.py — línea 29
-self.session = httpx.Client(
-    timeout=60.0,
-    follow_redirects=True,   # ← añadido
-    headers={"User-Agent": "ProyectorUrbanisticoGetafe/0.1"}
-)
+# backend/app/scrapers/ine.py — get_transacciones_inmobiliarias()
+
+# ANTES (roto — tabla inexistente)
+datos = self.get_tabla("46964")  # ID tabla transacciones por municipio
+
+# DESPUÉS (correcto — serie verificada, datos reales)
+datos = self.get_serie("ETDP3899")  # Madrid provincia. Compraventa general. Mensual 2007-hoy
+# + procesamiento: agrega datos mensuales por año → columnas [anno, transacciones]
 ```
 
-### Problema residual — tabla 46964 devuelve 404 en jsCache
+Series disponibles para ETDP en Madrid (todas verificadas):
 
-Con `follow_redirects=True`, el cliente sigue el redirect 301 correctamente, pero la URL de destino `jsCache/ES/DATOS_TABLA/46964` devuelve **404**. La tabla 46964 no está disponible en el endpoint jsCache del INE.
+| Serie | Descripción | Ámbito |
+|-------|-------------|--------|
+| `ETDP3899` | Compraventa general | Provincia Madrid |
+| `ETDP3898` | Vivienda nueva | Provincia Madrid |
+| `ETDP3897` | Vivienda segunda mano | Provincia Madrid |
+| `ETDP1761` | Compraventa general | CCAA Madrid |
 
-**Análisis:**
-- El redirect se sigue sin error (fix correcto y verificado)
-- El 404 es del propio servidor del INE, no de Docker
-- La tabla 46964 puede no existir o haber cambiado de ID
+Se usa `ETDP3899` (provincia) como proxy de actividad inmobiliaria para Getafe.
 
-**Posibles soluciones para v0.3:**
-- Buscar el ID correcto de la tabla ETN de transacciones por municipio en el DataLab del INE
-- Usar la operación 10058 (Estadística de Transmisiones) con `get_serie()` en lugar de `get_tabla()`
+### Datos reales obtenidos
 
-### Workaround activo
-
-`_cargar_transacciones_ine()` en `initial_load.py` detecta el fallo y usa `TRANSACCIONES_REFERENCIA` (serie 2004–2025 aproximada). La BD tiene 22 registros válidos para desarrollo.
+| Anno | Transacciones (Madrid prov.) |
+|------|------------------------------|
+| 2007 | ~85.000 (máximo pre-crisis) |
+| 2012 | ~41.000 (mínimo crisis) |
+| 2022 | ~85.000 (máximo reciente) |
 
 ### Verificación
 
 - [x] `test_ine_scraper_sigue_redirects` → `follow_redirects=True` confirmado ✅
-- [x] `test_ine_tabla_46964_no_lanza_error_redirect` → no se lanza error de redirect ✅
-- [x] Tests completos: **14/14 passed** ✅
+- [x] `test_ine_transacciones_usa_serie_etdp3899` → código usa ETDP3899, no tabla 46964 ✅
+- [x] `test_ine_etdp3899_devuelve_datos_madrid` → DataFrame con ≥10 años, >10.000 transacciones/año ✅
 
 ---
 

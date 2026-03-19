@@ -4,7 +4,9 @@ Documentación: https://www.ine.es/dyngs/DataLab/es/manual.htm?cid=1259945948443
 
 Operaciones relevantes para urbanismo en Getafe (código INE: 28065):
   - 30062: Estadística continua de población (padrón)
-  - 10058: Estadísticas de transmisiones de derechos de propiedad (compraventas)
+  - 30168 / ETDP (Id=7): Estadística de Transmisión de Derechos de la Propiedad (compraventas)
+    NOTA: esta operación NO publica datos a nivel municipal. El nivel más fino es provincia.
+    Serie ETDP3899 = Madrid provincia, compraventa general (vivienda libre + protegida), mensual.
   - Encuesta de Condiciones de Vida
   - Estadísticas de construcción (permisos de obra)
 """
@@ -79,17 +81,35 @@ class INEScraper:
 
     def get_transacciones_inmobiliarias(self) -> pd.DataFrame:
         """
-        Estadísticas de transmisiones de derechos de propiedad (compraventas).
-        Fuente: INE — Estadística de Transmisiones de Derechos de la Propiedad.
+        Estadísticas de compraventas de vivienda — Provincia de Madrid.
+        Fuente: INE — Estadística de Transmisión de Derechos de la Propiedad (ETDP).
+        Operación: Id=7, Código=ETDP, Cod_IOE=30168.
+
+        IMPORTANTE: la API INE no publica datos ETDP a nivel municipal (solo CCAA y provincia).
+        Se usa la serie ETDP3899 (Madrid provincia, compraventa general, mensual 2007-hoy)
+        como proxy de actividad inmobiliaria para el ámbito de Getafe.
+
+        La tabla 46964 referenciada anteriormente no existía en el INE — era un ID incorrecto
+        que provocaba 404 tras el redirect 301 a jsCache.
         """
-        datos = self.get_tabla("46964")  # ID tabla transacciones por municipio
+        datos = self.get_serie("ETDP3899")  # Madrid provincia. Compraventa general. Mensual 2007-hoy
         if not datos:
-            logger.warning("No se obtuvieron datos de transacciones INE")
+            logger.warning(
+                "No se obtuvieron datos de transacciones ETDP INE (serie ETDP3899 — Madrid provincia)"
+            )
             return pd.DataFrame()
         df = pd.DataFrame(datos)
-        # Filtrar por Getafe
-        if "Nombre" in df.columns:
-            df = df[df["Nombre"].str.contains("Getafe", case=False, na=False)]
+        # La serie devuelve datos mensuales (FK_Periodo=1..12); agregar por año
+        if "Anyo" in df.columns and "Valor" in df.columns:
+            df["anno"] = pd.to_numeric(df["Anyo"], errors="coerce")
+            df["valor"] = pd.to_numeric(df["Valor"], errors="coerce")
+            df = df[df["anno"] >= settings.YEAR_START]
+            df = (
+                df.groupby("anno", as_index=False)["valor"]
+                .sum()
+                .rename(columns={"valor": "transacciones"})
+                .sort_values("anno")
+            )
         return df
 
     def get_indice_precios_vivienda(self) -> pd.DataFrame:

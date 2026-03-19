@@ -44,6 +44,11 @@ npm run lint      # ESLint TypeScript
 npm run preview   # Vista previa del build de producción
 ```
 
+> **HMR en Docker sobre Windows**: Vite no detecta cambios de ficheros del host vía inotify. Tras editar ficheros del frontend, ejecutar:
+> ```bash
+> docker restart getafe_frontend
+> ```
+
 ### URLs locales
 | Servicio | URL |
 |---|---|
@@ -104,12 +109,13 @@ Ver `.env.example`. Las más relevantes:
 - `ALLOWED_ORIGINS` — CORS (añadir dominios de producción)
 
 ## Estado del proyecto
-Actualmente en **v0.2 (en progreso)**. v0.1 completado (scaffold). v0.2 avances:
+Actualmente en **v0.2 (casi completo — falta verificación final)**. v0.1 completado (scaffold). v0.2 avances:
 - ✅ Alembic configurado, 2 migraciones aplicadas (`0001` schema inicial + `c1b80c16bdda` nuevos modelos)
 - ✅ `initial_load` operativo: 12 barrios, 312 valores_suelo, 35 visados históricos (1991-2025)
 - ✅ Scrapers BOCM y MIVAU corregidos y operativos
 - ✅ Modelos adicionales: `DatoINE` (indicadores INE en bruto), `ValorMercado` (precios de mercado)
-- ⏳ Endpoints API con datos reales y tests pendientes (tareas 4.x)
-- ⏳ Frontend Tendencias funcional pendiente (tareas 5.x)
+- ✅ Endpoints API con datos reales: `/kpis`, `/obra-nueva`, `/valor-suelo`, `/transacciones`
+- ✅ Frontend Tendencias funcional: 3 gráficos reales + KPI Valor medio suelo en Overview
+- ⏳ Verificación final y estabilización (tarea 6.x)
 
 Roadmap: v0.3 mapa → v0.4 alertas → v0.5 ML → v1.0 despliegue.

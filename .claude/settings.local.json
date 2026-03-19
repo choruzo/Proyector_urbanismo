@@ -30,7 +30,18 @@
       "WebFetch(domain:www.ine.es)",
       "WebFetch(domain:datos.gob.es)",
       "WebFetch(domain:www.transportes.gob.es)",
-      "Bash(curl -s \"https://servicios.ine.es/wstempus/js/ES/SERIES_TABLA/6150?det=2\" -L --max-time 30)"
+      "Bash(curl -s \"https://servicios.ine.es/wstempus/js/ES/SERIES_TABLA/6150?det=2\" -L --max-time 30)",
+      "Bash(npm run:*)",
+      "Bash(npx tsc:*)",
+      "mcp__Claude_Preview__preview_start",
+      "mcp__chrome-devtools__take_screenshot",
+      "mcp__chrome-devtools__evaluate_script",
+      "mcp__chrome-devtools__navigate_page",
+      "mcp__chrome-devtools__wait_for",
+      "mcp__chrome-devtools__resize_page",
+      "mcp__chrome-devtools__get_console_message",
+      "mcp__chrome-devtools__list_console_messages",
+      "Bash(docker restart:*)"
     ]
   }
 }

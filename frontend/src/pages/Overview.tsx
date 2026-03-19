@@ -77,9 +77,11 @@ export default function Overview() {
           color="amber"
         />
         <KPICard
-          label="Año de referencia"
-          value={String(kpis?.anno ?? 2026)}
+          label="Valor medio suelo"
+          value={kpisLoading ? '...' : formatNumber(kpis?.valor_suelo_medio_euro_m2 ?? 0)}
+          subtitle="€/m² — último año"
           icon={Euro}
+          trend={kpis?.variacion_valor_pct ?? undefined}
           color="violet"
         />
       </div>

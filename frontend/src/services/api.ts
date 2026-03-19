@@ -13,6 +13,9 @@ export const getTendenciaObraNueva = (params?: { anno_inicio?: number; anno_fin?
 export const getTendenciaValorSuelo = (params?: { anno_inicio?: number; anno_fin?: number; barrio_id?: number }) =>
   api.get('/tendencias/valor-suelo', { params }).then((r) => r.data)
 
+export const getTendenciaTransacciones = (params?: { anno_inicio?: number; anno_fin?: number }) =>
+  api.get('/tendencias/transacciones', { params }).then((r) => r.data)
+
 export const getKPIs = () =>
   api.get('/tendencias/kpis').then((r) => r.data)
 
